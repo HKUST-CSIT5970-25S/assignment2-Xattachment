@@ -2,6 +2,11 @@
 # csit5970 Assignment-2 (10 marks)
 
 ### Deadline: April, 1st, 23:59 (Tuesday)
+---
+
+### Name: QIAN Qixin
+### Student Id: 21087207
+### Email: qqianac@connect.ust.hk
 
 ---
 
