@@ -6,6 +6,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.io.FloatWritable;
+import org.apache.hadoop.io.DoubleWritable;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -53,6 +54,10 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			while(doc_tokenizer.hasMoreTokens()){
+				String token = doc_tokenizer.nextToken();
+				context.write(new Text(token), new IntWritable(1));
+			}
 		}
 	}
 
@@ -66,6 +71,11 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+			for (IntWritable v : values) {
+				sum += v.get();
+			}
+			context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -81,6 +91,19 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 用 TreeSet 对本行单词去重并按字母排序
+			TreeSet<String> distinctWords = new TreeSet<String>();
+			while(doc_tokenizer.hasMoreTokens()){
+				distinctWords.add(doc_tokenizer.nextToken());
+			}
+			// 对去重后的单词列表，枚举所有 (A,B) 对，要求 A < B（TreeSet 自然排序）
+			List<String> wordList = new ArrayList<String>(distinctWords);
+			for (int i = 0; i < wordList.size(); i++) {
+				for (int j = i+1; j < wordList.size(); j++) {
+					PairOfStrings pair = new PairOfStrings(wordList.get(i), wordList.get(j));
+					context.write(pair, new IntWritable(1));
+				}
+			}
 		}
 	}
 
@@ -93,6 +116,11 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+			for (IntWritable v : values) {
+				sum += v.get();
+			}
+			context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -145,6 +173,18 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int pairCount = 0;
+			for (IntWritable v : values) {
+				pairCount += v.get();
+			}
+			String A = key.getLeftElement();
+			String B = key.getRightElement();
+			Integer freqA = word_total_map.get(A);
+			Integer freqB = word_total_map.get(B);
+			if (freqA != null && freqB != null && freqA != 0 && freqB != 0) {
+				double cor = (double) pairCount / (freqA * freqB);
+				context.write(key, new DoubleWritable(cor));
+			}
 		}
 	}
 

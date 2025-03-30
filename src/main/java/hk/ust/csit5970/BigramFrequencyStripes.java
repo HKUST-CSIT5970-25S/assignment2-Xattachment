@@ -54,6 +54,26 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 创建局部 Map 存储每个左单词对应的 stripe
+			java.util.HashMap<String, HashMapStringIntWritable> localStripes =
+					new java.util.HashMap<String, HashMapStringIntWritable>();
+			for (int i = 0; i < words.length - 1; i++) {
+				String left = words[i];
+				String right = words[i + 1];
+				if (left == null || left.isEmpty() || right == null || right.isEmpty()) {
+					continue;
+				}
+				if (!localStripes.containsKey(left)) {
+					localStripes.put(left, new HashMapStringIntWritable());
+				}
+				// 将 (left, right) 出现次数加 1
+				localStripes.get(left).increment(right, 1);
+			}
+			// 发出每个左单词及其 stripe
+			for (Map.Entry<String, HashMapStringIntWritable> entry : localStripes.entrySet()) {
+				KEY.set(entry.getKey());
+				context.write(KEY, entry.getValue());
+			}
 		}
 	}
 
@@ -75,6 +95,29 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			SUM_STRIPES.clear();
+			// 合并所有 stripe（利用 plus 方法累加各 stripe 的计数）
+			for (HashMapStringIntWritable stripe : stripes) {
+				SUM_STRIPES.plus(stripe);
+			}
+			// 计算边际总数，即所有后续单词的出现总数
+			int total = 0;
+			for (Integer count : SUM_STRIPES.values()) {
+				total += count;
+			}
+			// 输出总数记录：格式为 (A, "") 以及总数（float 型）
+			BIGRAM.set(key.toString(), "");
+			FREQ.set((float) total);
+			context.write(BIGRAM, FREQ);
+			// 输出每个 bigram 的相对频率记录：格式为 (A, B) 和 count/total
+			for (Map.Entry<String, Integer> entry : SUM_STRIPES.entrySet()) {
+				String right = entry.getKey();
+				int count = entry.getValue();
+				float relative = (float) count / total;
+				BIGRAM.set(key.toString(), right);
+				FREQ.set(relative);
+				context.write(BIGRAM, FREQ);
+			}
 		}
 	}
 
@@ -94,6 +137,14 @@ public class BigramFrequencyStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			SUM_STRIPES.clear();
+			for (HashMapStringIntWritable stripe : stripes) {
+				SUM_STRIPES.plus(stripe);
+			}
+			// 为避免对象复用问题，构造一个新的 aggregated stripe
+			HashMapStringIntWritable aggregatedStripe = new HashMapStringIntWritable();
+			aggregatedStripe.putAll(SUM_STRIPES);
+			context.write(key, aggregatedStripe);
 		}
 	}
 

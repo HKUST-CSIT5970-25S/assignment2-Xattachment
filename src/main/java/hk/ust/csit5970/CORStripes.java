@@ -43,6 +43,10 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			while(doc_tokenizer.hasMoreTokens()){
+				String token = doc_tokenizer.nextToken();
+				context.write(new Text(token), new IntWritable(1));
+			}
 		}
 	}
 
@@ -56,6 +60,11 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+			for (IntWritable v : values) {
+				sum += v.get();
+			}
+			context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -75,6 +84,20 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 将去重后的单词转换为列表，以便按索引遍历
+			List<String> wordList = new ArrayList<String>(sorted_word_set);
+			// 对每个单词 A，构造 stripe：所有在 A 后的单词 B（保证 A < B）
+			for (int i = 0; i < wordList.size(); i++) {
+				String A = wordList.get(i);
+				MapWritable stripe = new MapWritable();
+				for (int j = i+1; j < wordList.size(); j++) {
+					String B = wordList.get(j);
+					stripe.put(new Text(B), new IntWritable(1));
+				}
+				if (!stripe.isEmpty()) {
+					context.write(new Text(A), stripe);
+				}
+			}
 		}
 	}
 
@@ -89,6 +112,19 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			MapWritable combined = new MapWritable();
+			for (MapWritable m : values) {
+				for (Writable k : m.keySet()){
+					IntWritable count = (IntWritable) m.get(k);
+					if (combined.containsKey(k)) {
+						IntWritable prev = (IntWritable) combined.get(k);
+						combined.put(k, new IntWritable(prev.get() + count.get()));
+					} else {
+						combined.put(k, new IntWritable(count.get()));
+					}
+				}
+			}
+			context.write(key, combined);
 		}
 	}
 
@@ -142,6 +178,32 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 合并所有 stripe 对于 key（左单词 A）的 MapWritable
+			MapWritable combined = new MapWritable();
+			for (MapWritable m : values) {
+				for (Writable k : m.keySet()){
+					IntWritable count = (IntWritable) m.get(k);
+					if (combined.containsKey(k)) {
+						IntWritable prev = (IntWritable) combined.get(k);
+						combined.put(k, new IntWritable(prev.get() + count.get()));
+					} else {
+						combined.put(k, new IntWritable(count.get()));
+					}
+				}
+			}
+			// 取出当前左单词 A 的频率
+			Integer freqA = word_total_map.get(key.toString());
+			if (freqA == null || freqA == 0) return;
+			// 对于 stripe 中的每个 B，计算 COR(A,B)
+			for (Writable k : combined.keySet()){
+				Text B_text = (Text) k;
+				Integer freqB = word_total_map.get(B_text.toString());
+				if (freqB == null || freqB == 0) continue;
+				int pairCount = ((IntWritable) combined.get(k)).get();
+				double cor = (double) pairCount / (freqA * freqB);
+				PairOfStrings pair = new PairOfStrings(key.toString(), B_text.toString());
+				context.write(pair, new DoubleWritable(cor));
+			}
 		}
 	}
 

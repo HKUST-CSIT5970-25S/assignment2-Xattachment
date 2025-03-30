@@ -16,6 +16,8 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.FloatWritable;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.WritableComparable;
+import org.apache.hadoop.io.WritableComparator;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -53,6 +55,18 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 对每行中相邻的单词对处理
+		    for (int i = 0; i < words.length - 1; i++) {
+		        String w1 = words[i];
+		        String w2 = words[i + 1];
+		        if (w1.length() == 0 || w2.length() == 0) continue;
+		        // 发出当前bigram (w1, w2)
+		        BIGRAM.set(w1, w2);
+		        context.write(BIGRAM, ONE);
+		        // 同时发出边际统计 (w1, "*")
+		        BIGRAM.set(w1, "*");
+		        context.write(BIGRAM, ONE);
+		    }
 		}
 	}
 
@@ -65,12 +79,38 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		// Reuse objects.
 		private final static FloatWritable VALUE = new FloatWritable();
 
+		private String currentLeft = null;
+		private int marginalCount = 0;	
 		@Override
 		public void reduce(PairOfStrings key, Iterable<IntWritable> values,
 				Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			// 当遇到新的左单词时，重置边际计数
+		    if (currentLeft == null || !key.getLeftElement().equals(currentLeft)) {
+		        currentLeft = key.getLeftElement();
+		        marginalCount = 0;
+		    }
+		    int sum = 0;
+		    for (IntWritable val : values) {
+		        sum += val.get();
+		    }
+		    if (key.getRightElement().equals("*")) {
+		        // 此记录表示边际总数，保存并输出总数记录
+		        marginalCount = sum;
+		        PairOfStrings outKey = new PairOfStrings();
+		        outKey.set(currentLeft, ""); // 输出格式：A\t(total)
+		        VALUE.set((float) marginalCount);
+		        context.write(outKey, VALUE);
+		    } else {
+		        // 计算相对频率：bigram频率 = count / marginalCount
+		        float frequency = (float) sum / marginalCount;
+		        PairOfStrings outKey = new PairOfStrings();
+		        outKey.set(currentLeft, key.getRightElement());
+		        VALUE.set(frequency);
+		        context.write(outKey, VALUE);
+		    }
 		}
 	}
 	
@@ -84,6 +124,11 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			int sum = 0;
+		    for (IntWritable val : values) {
+		        sum += val.get();
+		    }
+		    context.write(key, new IntWritable(sum));
 		}
 	}
 
@@ -98,6 +143,31 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 			return (key.getLeftElement().hashCode() & Integer.MAX_VALUE)
 					% numReduceTasks;
 		}
+	}
+
+	public static class MySortComparator extends WritableComparator {
+	    protected MySortComparator() {
+	        super(PairOfStrings.class, true);
+	    }
+	    
+	    @Override
+	    public int compare(WritableComparable a, WritableComparable b) {
+	        PairOfStrings p1 = (PairOfStrings) a;
+	        PairOfStrings p2 = (PairOfStrings) b;
+	        // 首先按左元素排序
+	        int cmp = p1.getLeftElement().compareTo(p2.getLeftElement());
+	        if (cmp != 0) {
+	            return cmp;
+	        }
+	        // 如果左元素相同，确保右元素为"*"的记录排在前面
+	        if (p1.getRightElement().equals("*") && !p2.getRightElement().equals("*")) {
+	            return -1;
+	        } else if (!p1.getRightElement().equals("*") && p2.getRightElement().equals("*")) {
+	            return 1;
+	        } else {
+	            return p1.getRightElement().compareTo(p2.getRightElement());
+	        }
+	    }
 	}
 
 	/**
@@ -160,6 +230,7 @@ public class BigramFrequencyPairs extends Configured implements Tool {
 		Job job = Job.getInstance(conf);
 		job.setJobName(BigramFrequencyPairs.class.getSimpleName());
 		job.setJarByClass(BigramFrequencyPairs.class);
+		job.setSortComparatorClass(MySortComparator.class);
 
 		job.setNumReduceTasks(reduceTasks);
 
